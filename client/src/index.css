@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.1) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
+  }
+
+  body {
+    background: #0a0e1a;
+    overflow-x: hidden;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-glass-medium backdrop-blur-xl border border-glass-border rounded-2xl shadow-glass;
+  }
+
+  .glass-panel-solid {
+    @apply bg-surface-tertiary/80 backdrop-blur-xl border border-glass-border rounded-2xl shadow-glass;
+  }
+
+  .glass-button {
+    @apply px-4 py-2 rounded-xl bg-glass-medium backdrop-blur-md border border-glass-border
+           hover:bg-glass-heavy transition-all duration-300 font-medium text-sm;
+  }
+
+  .glass-input {
+    @apply w-full px-4 py-3 rounded-xl bg-glass-light backdrop-blur-md border border-glass-border
+           text-white placeholder-white/30 focus:outline-none focus:border-neon-cyan/50
+           focus:shadow-glow transition-all duration-300;
+  }
+
+  .status-clear {
+    @apply bg-neon-green/10 text-neon-green border-neon-green/20;
+  }
+
+  .status-moderate {
+    @apply bg-neon-orange/10 text-neon-orange border-neon-orange/20;
+  }
+
+  .status-crowded {
+    @apply bg-neon-red/10 text-neon-red border-neon-red/20;
+  }
+
+  .status-critical {
+    @apply bg-red-500/20 text-red-400 border-red-500/30 animate-pulse-fast;
+  }
+
+  .neon-text {
+    @apply text-neon-cyan drop-shadow-[0_0_8px_rgba(0,240,255,0.5)];
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-neon-cyan via-astra-400 to-neon-purple bg-clip-text text-transparent;
+  }
+
+  .nav-link {
+    @apply relative px-4 py-2 text-sm font-medium text-white/60 hover:text-white
+           transition-all duration-300 rounded-lg hover:bg-glass-light;
+  }
+
+  .nav-link.active {
+    @apply text-neon-cyan bg-glass-medium shadow-glow;
+  }
+
+  .pulse-dot {
+    @apply relative;
+  }
+
+  .pulse-dot::before {
+    content: '';
+    @apply absolute inset-0 rounded-full animate-ping;
+    background: inherit;
+    opacity: 0.4;
+  }
+}
+
+@layer utilities {
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .bg-radial-glow {
+    background: radial-gradient(ellipse at 50% 0%, rgba(0, 240, 255, 0.08) 0%, transparent 60%);
+  }
+
+  .text-shadow-glow {
+    text-shadow: 0 0 20px rgba(0, 240, 255, 0.5);
+  }
+
+  .mask-fade-bottom {
+    -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+    mask-image: linear-gradient(to bottom, black 70%, transparent 100%);
+  }
+}

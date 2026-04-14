@@ -1,0 +1,26 @@
+{
+  "name": "astraflow-x",
+  "version": "1.0.0",
+  "description": "Predictive Crowd Intelligence for Sawai Mansingh Stadium",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
+    "dev:server": "npm run dev -w server",
+    "dev:client": "npm run dev -w client",
+    "build": "npm run build --workspaces",
+    "build:server": "npm run build -w server",
+    "build:client": "npm run build -w client",
+    "test": "npm test --workspaces",
+    "lint": "npm run lint -w client",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up",
+    "simulate": "npm run simulate -w server"
+  },
+  "workspaces": [
+    "server",
+    "client"
+  ],
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
