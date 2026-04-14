@@ -8,6 +8,9 @@ const envSchema = z.object({
   FIREBASE_SERVICE_ACCOUNT_PATH: z.string().optional(),
   FIREBASE_DATABASE_URL: z.string().optional(),
   VITE_API_URL: z.string().optional(),
+  GOOGLE_CLOUD_PROJECT: z.string().optional(),
+  BIGQUERY_DATASET: z.string().default('astraflow_analytics'),
+  BIGQUERY_TABLE: z.string().default('crowd_metrics'),
 });
 
 export function validateEnv() {

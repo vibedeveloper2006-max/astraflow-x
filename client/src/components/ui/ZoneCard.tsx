@@ -4,6 +4,7 @@ interface ZoneCardProps {
   zone: Zone;
   compact?: boolean;
   onClick?: (zone: Zone) => void;
+  isActive?: boolean;
 }
 
 const statusConfig: Record<string, { bg: string; text: string; dot: string; label: string }> = {
@@ -30,7 +31,7 @@ const trendIcons: Record<string, { icon: string; color: string }> = {
   stable: { icon: '➡️', color: 'text-white/40' },
 };
 
-export function ZoneCard({ zone, compact = false, onClick }: ZoneCardProps) {
+export function ZoneCard({ zone, compact = false, onClick, isActive }: ZoneCardProps) {
   const status = statusConfig[zone.status];
   const predicted = statusConfig[zone.predictedStatus];
   const trend = trendIcons[zone.congestionTrend];
@@ -40,7 +41,9 @@ export function ZoneCard({ zone, compact = false, onClick }: ZoneCardProps) {
     return (
       <button
         onClick={() => onClick?.(zone)}
-        className="w-full glass-panel p-3 text-left hover:bg-glass-heavy transition-all duration-200 cursor-pointer"
+        className={`w-full glass-panel p-3 text-left hover:bg-glass-heavy transition-all duration-200 cursor-pointer ${
+          isActive ? 'border-neon-cyan ring-1 ring-neon-cyan/50' : ''
+        }`}
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -62,6 +65,7 @@ export function ZoneCard({ zone, compact = false, onClick }: ZoneCardProps) {
       className={`w-full glass-panel p-5 text-left hover:bg-glass-heavy transition-all duration-300 cursor-pointer
         ${zone.status === 'critical' ? 'border-red-500/30 shadow-glow-red' : ''}
         ${zone.status === 'crowded' ? 'border-orange-500/20' : ''}
+        ${isActive ? 'border-neon-cyan/50 ring-1 ring-neon-cyan/30' : ''}
       `}
     >
       {/* Header */}

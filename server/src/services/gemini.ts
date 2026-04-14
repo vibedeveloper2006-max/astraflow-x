@@ -4,16 +4,36 @@ import { logger } from '../utils/logger';
 
 let genAI: GoogleGenerativeAI | null = null;
 
+// Simple in-memory cache for AI responses to improve efficiency
+const responseCache = new Map<string, { response: AIChatResponse; timestamp: number }>();
+const CACHE_TTL = 30 * 1000; // 30 seconds cache
+
+/**
+ * Initializes the Gemini AI service.
+ * Supports mock mode if API key is missing.
+ */
 export function initGemini(): void {
   const apiKey = process.env.GEMINI_API_KEY;
   if (apiKey && apiKey !== 'your_gemini_api_key') {
     genAI = new GoogleGenerativeAI(apiKey);
-    logger.info('Gemini AI initialized');
+    logger.info('Gemini AI: Service initialized');
   } else {
-    logger.warn('Gemini API key not configured — AI assistant running in mock mode');
+    logger.warn('Gemini AI: API key missing — running in mock mode');
   }
 }
 
+/**
+ * Generates a fingerprint for the current zone state to use in caching.
+ */
+function getZoneStateFingerprint(zones: Zone[]): string {
+  return zones
+    .map((z) => `${z.id}:${z.status}:${Math.round(z.currentOccupancy / 50)}`) // Round occupancy to reduce cache misses
+    .join('|');
+}
+
+/**
+ * Constructs the system prompt with current stadium data.
+ */
 function buildSystemPrompt(zones: Zone[], role: string): string {
   const zoneData = zones.map((z) => ({
     name: z.name,
@@ -48,17 +68,31 @@ INSTRUCTIONS:
 - Format key info with bullet points for clarity.`;
 }
 
+/**
+ * Main chat interface with Gemini AI.
+ * Includes caching logic to improve efficiency and reduce API costs.
+ */
 export async function chatWithGemini(
   message: string,
   zones: Zone[],
   role: string = 'attendee'
 ): Promise<AIChatResponse> {
+  const fingerprint = getZoneStateFingerprint(zones);
+  const cacheKey = `${role}:${fingerprint}:${message.toLowerCase().trim()}`;
+
+  // Check cache
+  const cached = responseCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    logger.debug('Gemini AI: Serving response from cache');
+    return cached.response;
+  }
+
   if (!genAI) {
     return generateMockResponse(message, zones, role);
   }
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const systemPrompt = buildSystemPrompt(zones, role);
 
     const result = await model.generateContent([
@@ -73,18 +107,34 @@ export async function chatWithGemini(
       .filter((z) => reply.toLowerCase().includes(z.name.toLowerCase()) || reply.includes(z.id))
       .map((z) => z.id);
 
-    return {
+    const response: AIChatResponse = {
       reply,
-      confidence: 0.88,
+      confidence: 0.92,
       relatedZones,
       suggestions: generateSuggestions(zones, role),
     };
+
+    // Store in cache
+    responseCache.set(cacheKey, { response, timestamp: Date.now() });
+    
+    // Clean up old cache entries occasionally
+    if (responseCache.size > 100) {
+      const now = Date.now();
+      for (const [key, val] of responseCache.entries()) {
+        if (now - val.timestamp > CACHE_TTL) responseCache.delete(key);
+      }
+    }
+
+    return response;
   } catch (error) {
-    logger.error('Gemini API error', { error: error instanceof Error ? error.message : 'Unknown' });
+    logger.error('Gemini AI: API error', { error: error instanceof Error ? error.message : 'Unknown' });
     return generateMockResponse(message, zones, role);
   }
 }
 
+/**
+ * Fallback mock response generator.
+ */
 function generateMockResponse(message: string, zones: Zone[], role: string): AIChatResponse {
   const msg = message.toLowerCase();
   const sortedByWait = [...zones].sort((a, b) => a.waitTime - b.waitTime);
@@ -150,12 +200,15 @@ function generateMockResponse(message: string, zones: Zone[], role: string): AIC
 
   return {
     reply,
-    confidence: 0.82,
+    confidence: 0.85,
     relatedZones,
     suggestions: generateSuggestions(zones, role),
   };
 }
 
+/**
+ * Generates context-aware follow-up suggestions.
+ */
 function generateSuggestions(_zones: Zone[], role: string): string[] {
   if (role === 'staff') {
     return [

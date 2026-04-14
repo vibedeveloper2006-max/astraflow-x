@@ -1,31 +1,48 @@
 import { Zone, NavigationRoute, NavigationResult } from '../types';
 import { logger } from '../utils/logger';
 
+/**
+ * GraphEdge represents a connection between two zones with a calculated weight.
+ */
 interface GraphEdge {
+  /** The unique identifier of the destination zone */
   to: string;
+  /** The cost to traverse this edge (congestion-weighted) */
   weight: number;
 }
 
+/**
+ * WeightMode determines whether to use current or predicted occupancy for routing.
+ */
 type WeightMode = 'current' | 'predicted';
 
 /**
- * Calculates edge weight based on congestion of the target zone.
- * Higher congestion = Higher weight = Less favorable route.
+ * Calculates edge weight based on the congestion and characteristics of the target zone.
+ * Higher congestion leads to a higher weight, making the route less favorable.
+ * 
+ * @param zone - The destination zone to evaluate
+ * @param mode - The weight calculation mode ('current' or 'predicted')
+ * @returns A numerical weight representing the cost to enter this zone
  */
 function calculateEdgeWeight(zone: Zone, mode: WeightMode): number {
   const occupancy = mode === 'current' ? zone.currentOccupancy : zone.predictedOccupancy;
-  const ratio = occupancy / zone.capacity;
+  const ratio = (occupancy || 0) / (zone.capacity || 1);
 
   // Base weight (representing physical distance/time) + congestion penalty
   const baseWeight = 1;
-  const congestionPenalty = ratio * ratio * 10; // Quadratic penalty for high congestion
+  // Quadratic penalty for high congestion to strongly discourage overcrowded paths
+  const congestionPenalty = ratio * ratio * 10; 
   const waitPenalty = (mode === 'current' ? zone.waitTime : zone.predictedWaitTime) * 0.5;
 
   return baseWeight + congestionPenalty + waitPenalty;
 }
 
 /**
- * Builds adjacency list graph from zone data.
+ * Builds an adjacency list graph from zone data for pathfinding.
+ * 
+ * @param zones - Array of all stadium zones
+ * @param mode - The weight mode to apply to edges
+ * @returns A Map serving as an adjacency list
  */
 function buildGraph(zones: Zone[], mode: WeightMode): Map<string, GraphEdge[]> {
   const graph = new Map<string, GraphEdge[]>();
@@ -53,8 +70,13 @@ function buildGraph(zones: Zone[], mode: WeightMode): Map<string, GraphEdge[]> {
 }
 
 /**
- * Dijkstra's shortest path algorithm.
- * Returns the path and total weight from source to destination.
+ * Dijkstra's shortest path algorithm implementation.
+ * Finds the optimal route between two nodes in a weighted graph.
+ * 
+ * @param graph - The adjacency list graph
+ * @param source - Starting node ID
+ * @param destination - Target node ID
+ * @returns Object containing the path array and total weight, or null if unreachable
  */
 function dijkstra(
   graph: Map<string, GraphEdge[]>,
@@ -65,10 +87,10 @@ function dijkstra(
   const previous = new Map<string, string | null>();
   const visited = new Set<string>();
 
-  // Priority queue implemented as sorted array (sufficient for small graph)
+  // Use a simple sorted array for priority queue (O(V log V) for this dataset size)
   const queue: Array<{ node: string; distance: number }> = [];
 
-  // Initialize
+  // Initialize all distances to Infinity
   for (const node of graph.keys()) {
     distances.set(node, Infinity);
     previous.set(node, null);
@@ -78,7 +100,7 @@ function dijkstra(
   queue.push({ node: source, distance: 0 });
 
   while (queue.length > 0) {
-    // Sort by distance and pick minimum
+    // Pick the node with the minimum distance
     queue.sort((a, b) => a.distance - b.distance);
     const current = queue.shift();
 
@@ -101,7 +123,7 @@ function dijkstra(
     }
   }
 
-  // Reconstruct path
+  // Backtrack to reconstruct the shortest path
   const path: string[] = [];
   let current: string | null | undefined = destination;
 
@@ -119,7 +141,12 @@ function dijkstra(
 }
 
 /**
- * Converts Dijkstra result to NavigationRoute with human-readable metrics.
+ * Normalizes Dijkstra output into a localized NavigationRoute object.
+ * 
+ * @param result - Raw result from Dijkstra algorithm
+ * @param zones - Array of stadium zones
+ * @param mode - Weight mode used for calculation
+ * @returns Formatted navigation data
  */
 function toNavigationRoute(
   result: { path: string[]; totalWeight: number },
@@ -142,21 +169,27 @@ function toNavigationRoute(
   return {
     path: result.path,
     totalWeight: Math.round(result.totalWeight * 100) / 100,
-    estimatedTime: Math.round(result.totalWeight * 2), // ~2 min per weight unit
+    estimatedTime: Math.round(result.totalWeight * 2), // Rough heuristic: 2min per weight unit
     congestionLevel: Math.round(avgCongestion * 100) / 100,
   };
 }
 
 /**
- * Main navigation function.
- * Finds fastest route now AND fastest predicted route, then recommends.
+ * Main cross-temporal navigation engine.
+ * Compares current optimal routes against predicted future states to provide 
+ * proactive visitor recommendations.
+ * 
+ * @param zones - Current state of all stadium zones
+ * @param sourceId - Visitor's current location ID
+ * @param destinationId - Visitor's target location ID
+ * @returns Best routes and an intelligent recommendation string
  */
 export function findBestRoute(
   zones: Zone[],
   sourceId: string,
   destinationId: string
 ): NavigationResult | null {
-  logger.debug('Finding routes', { source: sourceId, destination: destinationId });
+  logger.debug('Calculating spatial routes', { source: sourceId, destination: destinationId });
 
   const currentGraph = buildGraph(zones, 'current');
   const predictedGraph = buildGraph(zones, 'predicted');
@@ -165,31 +198,37 @@ export function findBestRoute(
   const predictedResult = dijkstra(predictedGraph, sourceId, destinationId);
 
   if (!currentResult || !predictedResult) {
-    logger.warn('No route found', { source: sourceId, destination: destinationId });
+    logger.warn('No valid route identified between zones', { source: sourceId, destination: destinationId });
     return null;
   }
 
   const fastestNow = toNavigationRoute(currentResult, zones, 'current');
   const fastestPredicted = toNavigationRoute(predictedResult, zones, 'predicted');
 
-  // Generate recommendation
+  // Logic to determine if waiting is better than moving now
   let recommendation: string;
   if (fastestPredicted.totalWeight < fastestNow.totalWeight * 0.8) {
     recommendation = `Wait 10-15 minutes — the predicted route via ${fastestPredicted.path.join(' → ')} will be ~${Math.round((1 - fastestPredicted.totalWeight / fastestNow.totalWeight) * 100)}% faster.`;
   } else if (fastestNow.totalWeight < fastestPredicted.totalWeight * 0.8) {
-    recommendation = `Go now! The current route is optimal. Congestion is expected to increase by ~${Math.round((fastestPredicted.totalWeight / fastestNow.totalWeight - 1) * 100)}%.`;
+    recommendation = `Go now! The current route is optimal. Future congestion is expected to increase path resistance by ~${Math.round((fastestPredicted.totalWeight / fastestNow.totalWeight - 1) * 100)}%.`;
   } else {
-    recommendation = `Both routes are similar. Current route: ~${fastestNow.estimatedTime} min. Consider leaving now for the most predictable experience.`;
+    recommendation = `Both routes are currently similar. Destination arrival: ~${fastestNow.estimatedTime} min. Consider moving now for the most stable experience.`;
   }
 
   return { fastestNow, fastestPredicted, recommendation };
 }
 
 /**
- * Find zones with shortest queues for a given type.
+ * Identifies zones of a specific type with the lowest wait times.
+ * Useful for finding the fastest food courts or restrooms.
+ * 
+ * @param zones - Array of stadium zones
+ * @param zoneType - Type of zone to filter (e.g., 'food_court')
+ * @returns Sorted array of zones by wait time
  */
 export function findShortestQueue(zones: Zone[], zoneType: string): Zone[] {
   return zones
     .filter((z) => z.type === zoneType)
     .sort((a, b) => a.waitTime - b.waitTime);
 }
+
