@@ -35,17 +35,6 @@ COPY --from=builder /app/server/dist server/dist/
 # Copy client build
 COPY --from=builder /app/client/dist server/public/
 
-# Serve static files from Express in production
-RUN echo 'const path = require("path"); \
-const express = require("express"); \
-const app = require("./dist/index.js").default; \
-app.use(express.static(path.join(__dirname, "public"))); \
-app.get("*", (req, res) => { \
-  if (!req.path.startsWith("/api")) { \
-    res.sendFile(path.join(__dirname, "public", "index.html")); \
-  } \
-});' > server/serve.js
-
 EXPOSE 8080
 
 CMD ["node", "server/dist/index.js"]

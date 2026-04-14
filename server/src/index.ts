@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
+import path from 'path';
 import { Zone, Alert } from './types';
 import { INITIAL_ZONES } from './config/stadium-data';
 import { initializeFirebase } from './config/firebase';
@@ -70,6 +71,20 @@ app.use('/api/navigation', createNavigationRoutes(getZones));
 app.use('/api/ai', createAIRoutes(getZones));
 app.use('/api/alerts', createAlertRoutes(getAlerts, setAlerts));
 app.use('/api/simulation', createSimulationRoutes(getZones, setZones, getAlerts, setAlerts));
+
+// ── Static Files (Production) ───────────────────────────
+if (process.env.NODE_ENV === 'production') {
+  const publicPath = path.join(__dirname, '../public');
+  app.use(express.static(publicPath));
+  
+  // Serve index.html for any non-API routes (SPA routing)
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(publicPath, 'index.html'));
+  });
+}
 
 // ── Error Handler ───────────────────────────────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

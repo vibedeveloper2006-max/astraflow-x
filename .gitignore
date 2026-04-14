@@ -15,6 +15,15 @@ tsc_errors_utf8.txt
 firebase_config*.txt
 projects.json
 service-account.json
+errors.txt
+build_errors.txt
+push_output.txt
+
+# Sensitive keys
+astraflow_key
+astraflow_key.pub
+astraflow_rsa
+astraflow_rsa.pub
 
 # Local storage
 .pnpm-store/
