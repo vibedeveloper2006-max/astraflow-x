@@ -171,12 +171,33 @@ function generateMockResponse(message: string, zones: Zone[], role: string): AIC
     msg.includes('busy') ||
     msg.includes('free')
   ) {
-    const best = sortedByWait[0];
+    let filteredZones = zones;
+    let subject = 'zone';
+
+    if (msg.includes('food') || msg.includes('court')) {
+      filteredZones = zones.filter((z) => z.type === 'food_court');
+      subject = 'food court';
+    } else if (msg.includes('restroom') || msg.includes('bathroom') || msg.includes('toilet')) {
+      filteredZones = zones.filter((z) => z.type === 'restroom');
+      subject = 'restroom';
+    } else if (msg.includes('gate') || msg.includes('entry') || msg.includes('exit')) {
+      filteredZones = zones.filter((z) => z.type === 'entry_gate' || z.type === 'exit_gate');
+      subject = 'gate';
+    }
+
+    const sortedFiltered = [...filteredZones].sort((a, b) => a.waitTime - b.waitTime);
+    if (sortedFiltered.length === 0) {
+      // Fallback if none match
+      sortedFiltered.push(...sortedByWait);
+    }
+
+    const best = sortedFiltered[0];
     relatedZones.push(best.id);
-    reply = `🎯 **Shortest queue right now:** ${best.name} with only ${best.waitTime} min wait time (${best.currentOccupancy}/${best.capacity} occupancy).\n\n`;
-    if (sortedByWait.length > 1) {
+    reply = `🎯 **Least crowded ${subject} right now:** ${best.name} with only ${best.waitTime} min wait time (${best.currentOccupancy}/${best.capacity} occupancy).\n\n`;
+    
+    if (sortedFiltered.length > 1) {
       reply += `**Alternatives:**\n`;
-      for (const z of sortedByWait.slice(1, 4)) {
+      for (const z of sortedFiltered.slice(1, 4)) {
         reply += `• ${z.name}: ~${z.waitTime} min wait\n`;
         relatedZones.push(z.id);
       }
