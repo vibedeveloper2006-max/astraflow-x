@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+  import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Zone, AIChatResponse } from '../types';
 import { logger } from '../utils/logger';
 import { getPredictionConfidence } from './prediction-engine';
