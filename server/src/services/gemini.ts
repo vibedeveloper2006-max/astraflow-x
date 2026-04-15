@@ -162,7 +162,15 @@ function generateMockResponse(message: string, zones: Zone[], role: string): AIC
   let reply: string;
   const relatedZones: string[] = [];
 
-  if (msg.includes('queue') || msg.includes('wait') || msg.includes('shortest')) {
+  if (
+    msg.includes('queue') ||
+    msg.includes('wait') ||
+    msg.includes('shortest') ||
+    msg.includes('least') ||
+    msg.includes('crowded') ||
+    msg.includes('busy') ||
+    msg.includes('free')
+  ) {
     const best = sortedByWait[0];
     relatedZones.push(best.id);
     reply = `🎯 **Shortest queue right now:** ${best.name} with only ${best.waitTime} min wait time (${best.currentOccupancy}/${best.capacity} occupancy).\n\n`;
