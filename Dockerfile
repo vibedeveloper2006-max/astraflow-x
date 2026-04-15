@@ -9,7 +9,7 @@ RUN npm install
 
 # Build server
 COPY server/package.json server/
-RUN cd server && npm install
+RUN cd server && npm install --legacy-peer-deps
 COPY server/ server/
 RUN cd server && npm run build
 
@@ -29,7 +29,7 @@ ENV PORT=8080
 
 # Copy server
 COPY --from=builder /app/server/package.json server/
-RUN cd server && npm install --omit=dev
+RUN cd server && npm install --omit=dev --legacy-peer-deps
 COPY --from=builder /app/server/dist server/dist/
 
 # Copy client build
