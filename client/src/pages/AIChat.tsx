@@ -1,7 +1,26 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { GlassPanel } from '../components/ui/GlassPanel';
 import { ChatMessage } from '../types';
 import { chatWithAI } from '../services/api';
+
+/** Safely renders AI markdown-like text without dangerouslySetInnerHTML XSS risk. */
+function SafeMarkdown({ content }: { content: string }) {
+  const parts = content.split(/(\*\*.*?\*\*)/g);
+  return (
+    <span className="whitespace-pre-wrap">
+      {parts.map((part, i) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return (
+            <strong key={i} className="text-white font-semibold">
+              {part.slice(2, -2)}
+            </strong>
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </span>
+  );
+}
 
 export function AIChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -22,13 +41,15 @@ export function AIChat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const msgListId = 'ai-message-log';
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [messages]);
 
-  async function handleSend(text?: string) {
-    const message = text ?? input.trim();
+  const handleSend = useCallback(async (text?: string) => {
+    const message = (text ?? input).trim();
     if (!message || loading) return;
 
     const userMsg: ChatMessage = {
@@ -53,7 +74,8 @@ export function AIChat() {
         suggestions: response.suggestions,
       };
       setMessages((prev) => [...prev, aiMsg]);
-    } catch {
+    } catch (err) {
+      console.error('AI chat error:', err);
       const errorMsg: ChatMessage = {
         id: `error-${Date.now()}`,
         role: 'assistant',
@@ -63,8 +85,9 @@ export function AIChat() {
       setMessages((prev) => [...prev, errorMsg]);
     } finally {
       setLoading(false);
+      inputRef.current?.focus();
     }
-  }
+  }, [input, loading]);
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -78,7 +101,10 @@ export function AIChat() {
       {/* Header */}
       <div className="text-center">
         <div className="inline-flex items-center gap-3 mb-3">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-neon-cyan via-astra-500 to-neon-purple flex items-center justify-center shadow-glow-lg">
+          <div
+            className="w-12 h-12 rounded-2xl bg-gradient-to-br from-neon-cyan via-astra-500 to-neon-purple flex items-center justify-center shadow-glow-lg"
+            aria-hidden="true"
+          >
             <span className="text-2xl">🤖</span>
           </div>
         </div>
@@ -87,21 +113,32 @@ export function AIChat() {
       </div>
 
       {/* Chat Container */}
-      <GlassPanel className="p-0 overflow-hidden flex flex-col" style={{ height: 'calc(100vh - 280px)', minHeight: '500px' } as React.CSSProperties}>
+      <GlassPanel
+        className="p-0 overflow-hidden flex flex-col"
+        style={{ height: 'calc(100vh - 280px)', minHeight: '500px' } as React.CSSProperties}
+      >
         {/* Messages */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+        <div
+          ref={scrollRef}
+          id={msgListId}
+          role="log"
+          aria-live="polite"
+          aria-label="Conversation with AstraFlow X AI assistant"
+          aria-busy={loading}
+          className="flex-1 overflow-y-auto p-6 space-y-4"
+        >
           {messages.map((msg) => (
             <MessageBubble key={msg.id} message={msg} onSuggestionClick={handleSend} />
           ))}
 
           {/* Typing indicator */}
           {loading && (
-            <div className="flex items-start gap-3 animate-fade-in">
+            <div className="flex items-start gap-3 animate-fade-in" aria-hidden="true">
               <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-neon-cyan to-astra-500 flex items-center justify-center flex-shrink-0">
                 <span className="text-sm">🤖</span>
               </div>
               <div className="glass-panel p-4">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5" role="status" aria-label="AI is thinking">
                   <div className="w-2 h-2 rounded-full bg-neon-cyan animate-bounce" style={{ animationDelay: '0ms' }} />
                   <div className="w-2 h-2 rounded-full bg-neon-cyan animate-bounce" style={{ animationDelay: '150ms' }} />
                   <div className="w-2 h-2 rounded-full bg-neon-cyan animate-bounce" style={{ animationDelay: '300ms' }} />
@@ -113,8 +150,13 @@ export function AIChat() {
 
         {/* Input Area */}
         <div className="border-t border-glass-border p-4">
-          <div className="flex gap-3">
+          <div className="flex gap-3" role="group" aria-label="Message input area">
+            <label htmlFor="chat-input" className="sr-only">
+              Type a message to the AI assistant
+            </label>
             <input
+              id="chat-input"
+              ref={inputRef}
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -122,6 +164,9 @@ export function AIChat() {
               placeholder="Ask about crowds, routes, predictions..."
               className="glass-input flex-1"
               disabled={loading}
+              aria-describedby={msgListId}
+              aria-label="Your message to the AI assistant"
+              maxLength={1000}
             />
             <button
               onClick={() => handleSend()}
@@ -129,8 +174,9 @@ export function AIChat() {
               className="px-6 py-3 rounded-xl bg-gradient-to-r from-neon-cyan to-astra-500 text-white font-semibold text-sm
                          hover:opacity-90 transition-all duration-200 disabled:opacity-30 disabled:cursor-not-allowed
                          shadow-glow flex-shrink-0"
+              aria-label="Send message"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
               </svg>
             </button>
@@ -141,49 +187,61 @@ export function AIChat() {
   );
 }
 
-function MessageBubble({ message, onSuggestionClick }: { message: ChatMessage; onSuggestionClick: (text: string) => void }) {
+function MessageBubble({
+  message,
+  onSuggestionClick,
+}: {
+  message: ChatMessage;
+  onSuggestionClick: (text: string) => void;
+}) {
   const isUser = message.role === 'user';
 
   return (
-    <div className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : ''} animate-slide-up`}>
+    <div
+      className={`flex items-start gap-3 ${isUser ? 'flex-row-reverse' : ''} animate-slide-up`}
+      role="article"
+      aria-label={`${isUser ? 'Your message' : 'AI response'}: ${message.content.slice(0, 50)}${message.content.length > 50 ? '…' : ''}`}
+    >
       {/* Avatar */}
-      <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-        isUser
-          ? 'bg-gradient-to-br from-neon-purple to-neon-pink'
-          : 'bg-gradient-to-br from-neon-cyan to-astra-500'
-      }`}>
+      <div
+        className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
+          isUser
+            ? 'bg-gradient-to-br from-neon-purple to-neon-pink'
+            : 'bg-gradient-to-br from-neon-cyan to-astra-500'
+        }`}
+        aria-hidden="true"
+      >
         <span className="text-sm">{isUser ? '👤' : '🤖'}</span>
       </div>
 
       <div className={`max-w-[80%] ${isUser ? 'text-right' : ''}`}>
-        <div className={`inline-block p-4 rounded-2xl text-sm leading-relaxed ${
-          isUser
-            ? 'bg-gradient-to-br from-neon-purple/20 to-neon-pink/10 border border-neon-purple/20 text-white/90'
-            : 'glass-panel text-white/80'
-        }`}>
-          <div className="whitespace-pre-wrap" dangerouslySetInnerHTML={{
-            __html: message.content
-              .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white">$1</strong>')
-              .replace(/\n/g, '<br />')
-          }} />
+        <div
+          className={`inline-block p-4 rounded-2xl text-sm leading-relaxed ${
+            isUser
+              ? 'bg-gradient-to-br from-neon-purple/20 to-neon-pink/10 border border-neon-purple/20 text-white/90'
+              : 'glass-panel text-white/80'
+          }`}
+        >
+          <SafeMarkdown content={message.content} />
         </div>
 
         {/* Confidence badge */}
         {message.confidence !== undefined && message.confidence < 1 && (
-          <p className="text-[10px] text-white/20 mt-1 font-mono">
+          <p className="text-[10px] text-white/20 mt-1 font-mono" aria-label={`Confidence: ${Math.round(message.confidence * 100)}%`}>
             Confidence: {Math.round(message.confidence * 100)}%
           </p>
         )}
 
         {/* Suggestions */}
         {message.suggestions && message.suggestions.length > 0 && (
-          <div className="flex flex-wrap gap-2 mt-3">
+          <div className="flex flex-wrap gap-2 mt-3" role="group" aria-label="Suggested follow-up questions">
             {message.suggestions.map((s: string) => (
               <button
                 key={s}
                 onClick={() => onSuggestionClick(s)}
                 className="px-3 py-1.5 text-xs rounded-lg bg-glass-light border border-glass-border text-white/50
                            hover:text-neon-cyan hover:border-neon-cyan/30 transition-all duration-200"
+                aria-label={`Ask: ${s}`}
               >
                 {s}
               </button>

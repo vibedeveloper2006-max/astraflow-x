@@ -59,7 +59,7 @@ export function StaffDashboard() {
           <h1 className="text-2xl font-display font-bold gradient-text">Staff Control Panel</h1>
           <p className="text-sm text-white/40 mt-1">Manage zones, predictions, and simulation</p>
         </div>
-        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold ${simStatus?.running ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+        <div className={`px-3 py-1.5 rounded-lg text-xs font-bold ${simStatus?.running ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`} role="status" aria-live="polite">
           {simStatus?.running ? '● SIMULATION LIVE' : '○ PAUSED'}
         </div>
       </div>
@@ -110,8 +110,8 @@ function SimulationControls({ eventType, onChangeEvent, onStart, onStop, zones, 
         <p className="text-xs text-white/40 mb-2">Event Scenario</p>
         <div className="grid grid-cols-2 gap-2">
           {['normal', 'match_start', 'halftime', 'match_end', 'emergency'].map((e) => (
-            <button key={e} onClick={() => onChangeEvent(e)} className={`px-2 py-1.5 rounded-lg text-[11px] font-medium capitalize ${eventType === e ? 'bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/30' : 'bg-glass-light text-white/40 border border-transparent'}`}>
-              {e.replace('_', ' ')}
+            <button key={e} onClick={() => onChangeEvent(e)} aria-pressed={eventType === e} className={`px-2 py-1.5 rounded-lg text-[11px] font-medium capitalize ${eventType === e ? 'bg-neon-cyan/20 text-neon-cyan border border-neon-cyan/30' : 'bg-glass-light text-white/40 border border-transparent'}`}>
+              {e.replace(/_/g, ' ')}
             </button>
           ))}
         </div>
@@ -119,12 +119,14 @@ function SimulationControls({ eventType, onChangeEvent, onStart, onStop, zones, 
 
       <GlassPanel>
         <h2 className="text-sm font-semibold mb-3">✏️ Update Occupancy</h2>
-        <select value={selectedZoneId ?? ''} onChange={(e) => setSelectedZoneId(e.target.value)} className="glass-input text-sm mb-2">
+        <label htmlFor="zone-select" className="sr-only">Select zone to update</label>
+        <select id="zone-select" value={selectedZoneId ?? ''} onChange={(e) => setSelectedZoneId(e.target.value)} className="glass-input text-sm mb-2" aria-live="polite">
           <option value="" className="bg-surface-primary">Select zone</option>
           {zones.map((z) => <option key={z.id} value={z.id} className="bg-surface-primary">{z.name} ({z.currentOccupancy}/{z.capacity})</option>)}
         </select>
-        {selectedZone && <p className="text-xs text-white/30 mb-2">Current: {selectedZone.currentOccupancy} / Max: {selectedZone.capacity}</p>}
-        <input type="number" value={newOccupancy} onChange={(e) => setNewOccupancy(e.target.value)} placeholder="New occupancy" className="glass-input text-sm mb-2" />
+        {selectedZone && <p id="zone-capacity-desc" className="text-xs text-white/30 mb-2">Current: {selectedZone.currentOccupancy} / Max: {selectedZone.capacity}</p>}
+        <label htmlFor="occupancy-input" className="sr-only">New occupancy value</label>
+        <input id="occupancy-input" type="number" value={newOccupancy} onChange={(e) => setNewOccupancy(e.target.value)} aria-describedby={selectedZone ? "zone-capacity-desc" : undefined} placeholder="New occupancy" className="glass-input text-sm mb-2" />
         <button onClick={onUpdateOccupancy} disabled={!selectedZoneId || !newOccupancy} className="w-full py-2 rounded-lg bg-astra-500/20 border border-astra-500/30 text-astra-400 text-sm font-semibold disabled:opacity-30">Update</button>
       </GlassPanel>
     </div>

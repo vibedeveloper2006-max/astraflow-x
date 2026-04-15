@@ -1,16 +1,17 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { Zone, AIChatResponse } from '../types';
 import { logger } from '../utils/logger';
+import { getPredictionConfidence } from './prediction-engine';
 
 let genAI: GoogleGenerativeAI | null = null;
 
-// Simple in-memory cache for AI responses to improve efficiency
+/** In-memory cache for AI responses to improve efficiency and reduce API costs. */
 const responseCache = new Map<string, { response: AIChatResponse; timestamp: number }>();
-const CACHE_TTL = 30 * 1000; // 30 seconds cache
+const CACHE_TTL = 30 * 1000; // 30 seconds
 
 /**
  * Initializes the Gemini AI service.
- * Supports mock mode if API key is missing.
+ * Falls back to mock mode if the API key is absent or is a placeholder.
  */
 export function initGemini(): void {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -23,16 +24,17 @@ export function initGemini(): void {
 }
 
 /**
- * Generates a fingerprint for the current zone state to use in caching.
+ * Generates a fingerprint for the current zone state for cache key derivation.
+ * Rounds occupancy to buckets of 50 to reduce cache misses from minor fluctuations.
  */
 function getZoneStateFingerprint(zones: Zone[]): string {
   return zones
-    .map((z) => `${z.id}:${z.status}:${Math.round(z.currentOccupancy / 50)}`) // Round occupancy to reduce cache misses
+    .map((z) => `${z.id}:${z.status}:${Math.round(z.currentOccupancy / 50)}`)
     .join('|');
 }
 
 /**
- * Constructs the system prompt with current stadium data.
+ * Constructs the AI system prompt containing live zone data.
  */
 function buildSystemPrompt(zones: Zone[], role: string): string {
   const zoneData = zones.map((z) => ({
@@ -69,8 +71,23 @@ INSTRUCTIONS:
 }
 
 /**
+ * Removes stale entries from the response cache to prevent unbounded growth.
+ */
+function cleanupCache(): void {
+  const now = Date.now();
+  for (const [key, val] of responseCache.entries()) {
+    if (now - val.timestamp > CACHE_TTL) responseCache.delete(key);
+  }
+}
+
+/**
  * Main chat interface with Gemini AI.
  * Includes caching logic to improve efficiency and reduce API costs.
+ * Falls back to a rule-based mock response if Gemini is unavailable.
+ *
+ * @param message - The user's message.
+ * @param zones - Current live zone state.
+ * @param role - User role: 'attendee' or 'staff'.
  */
 export async function chatWithGemini(
   message: string,
@@ -80,7 +97,7 @@ export async function chatWithGemini(
   const fingerprint = getZoneStateFingerprint(zones);
   const cacheKey = `${role}:${fingerprint}:${message.toLowerCase().trim()}`;
 
-  // Check cache
+  // Return cached response if still fresh
   const cached = responseCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
     logger.debug('Gemini AI: Serving response from cache');
@@ -102,38 +119,39 @@ export async function chatWithGemini(
 
     const reply = result.response.text();
 
-    // Extract related zones from response
+    // Extract zone IDs that are mentioned in the reply
     const relatedZones = zones
       .filter((z) => reply.toLowerCase().includes(z.name.toLowerCase()) || reply.includes(z.id))
       .map((z) => z.id);
 
+    // Use data-driven confidence based on history depth for the primary zone
+    const confidence = getPredictionConfidence(zones[0]?.id ?? 'zone-1');
+
     const response: AIChatResponse = {
       reply,
-      confidence: 0.92,
+      confidence,
       relatedZones,
       suggestions: generateSuggestions(zones, role),
     };
 
-    // Store in cache
     responseCache.set(cacheKey, { response, timestamp: Date.now() });
-    
-    // Clean up old cache entries occasionally
+
+    // Periodically clean up stale cache entries
     if (responseCache.size > 100) {
-      const now = Date.now();
-      for (const [key, val] of responseCache.entries()) {
-        if (now - val.timestamp > CACHE_TTL) responseCache.delete(key);
-      }
+      cleanupCache();
     }
 
     return response;
   } catch (error) {
-    logger.error('Gemini AI: API error', { error: error instanceof Error ? error.message : 'Unknown' });
+    const errMsg = error instanceof Error ? error.message : String(error);
+    logger.error('Gemini AI: API error', { error: errMsg });
     return generateMockResponse(message, zones, role);
   }
 }
 
 /**
- * Fallback mock response generator.
+ * Rule-based fallback response generator used when Gemini is unavailable.
+ * Covers the most common query types: queues, predictions, routes, staff actions.
  */
 function generateMockResponse(message: string, zones: Zone[], role: string): AIChatResponse {
   const msg = message.toLowerCase();
@@ -190,11 +208,12 @@ function generateMockResponse(message: string, zones: Zone[], role: string): AIC
   } else {
     const totalOccupancy = zones.reduce((sum, z) => sum + z.currentOccupancy, 0);
     const totalCapacity = zones.reduce((sum, z) => sum + z.capacity, 0);
+    const sortedByRisk = [...zones].sort((a, b) => b.riskScore - a.riskScore);
     reply = `🏟️ **Stadium Overview:**\n\n`;
     reply += `• **Total occupancy:** ${totalOccupancy.toLocaleString()}/${totalCapacity.toLocaleString()} (${Math.round((totalOccupancy / totalCapacity) * 100)}%)\n`;
     reply += `• **Critical zones:** ${criticalZones.length}\n`;
     reply += `• **Clear zones:** ${clearZones.length}\n`;
-    reply += `• **Highest risk:** ${zones.sort((a, b) => b.riskScore - a.riskScore)[0]?.name || 'None'}\n\n`;
+    reply += `• **Highest risk:** ${sortedByRisk[0]?.name || 'None'}\n\n`;
     reply += `💬 Try asking about queues, predictions, routes, or specific zones!`;
   }
 
@@ -207,7 +226,7 @@ function generateMockResponse(message: string, zones: Zone[], role: string): AIC
 }
 
 /**
- * Generates context-aware follow-up suggestions.
+ * Generates context-aware follow-up suggestions based on user role.
  */
 function generateSuggestions(_zones: Zone[], role: string): string[] {
   if (role === 'staff') {

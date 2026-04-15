@@ -25,26 +25,45 @@ export function createSimulationRoutes(
     eventType: 'normal',
   };
 
-  // POST /api/simulation/start — start simulation
-  router.post('/start', validateBody(SimConfigSchema), (req: Request, res: Response) => {
+  /**
+   * Internal helper to execute a single simulation step
+   * and process the resulting updates and alerts.
+   */
+  const executeTick = () => {
+    const zones = getZones();
+    const updated = simulateTick(zones, currentConfig);
+    setZones(updated);
+
+    const newAlerts = checkAlerts(updated);
+    if (newAlerts.length > 0) {
+      const existing = getAlerts();
+      setAlerts([...existing, ...newAlerts].slice(-200)); // Keep last 200 alerts
+    }
+    return { updated, newAlerts };
+  };
+
+  /**
+   * Starts the simulation interval based on the current configuration.
+   */
+  const startSimulation = () => {
+    if (simulationInterval) clearInterval(simulationInterval);
+    simulationInterval = setInterval(executeTick, currentConfig.intervalMs);
+  };
+
+  /**
+   * Stops the active simulation if running.
+   */
+  const stopSimulation = () => {
     if (simulationInterval) {
       clearInterval(simulationInterval);
+      simulationInterval = null;
     }
+  };
 
+  // POST /api/simulation/start — start simulation
+  router.post('/start', validateBody(SimConfigSchema), (req: Request, res: Response) => {
     currentConfig = { ...currentConfig, ...req.body };
-
-    simulationInterval = setInterval(() => {
-      const zones = getZones();
-      const updated = simulateTick(zones, currentConfig);
-      setZones(updated);
-
-      // Generate and store alerts
-      const newAlerts = checkAlerts(updated);
-      if (newAlerts.length > 0) {
-        const existing = getAlerts();
-        setAlerts([...existing, ...newAlerts].slice(-200)); // Keep last 200
-      }
-    }, currentConfig.intervalMs);
+    startSimulation();
 
     res.json({
       success: true,
@@ -55,10 +74,7 @@ export function createSimulationRoutes(
 
   // POST /api/simulation/stop — stop simulation
   router.post('/stop', (_req: Request, res: Response) => {
-    if (simulationInterval) {
-      clearInterval(simulationInterval);
-      simulationInterval = null;
-    }
+    stopSimulation();
 
     res.json({
       success: true,
@@ -67,17 +83,9 @@ export function createSimulationRoutes(
     });
   });
 
-  // POST /api/simulation/tick — run single tick
+  // POST /api/simulation/tick — run single tick manually
   router.post('/tick', (_req: Request, res: Response) => {
-    const zones = getZones();
-    const updated = simulateTick(zones, currentConfig);
-    setZones(updated);
-
-    const newAlerts = checkAlerts(updated);
-    if (newAlerts.length > 0) {
-      const existing = getAlerts();
-      setAlerts([...existing, ...newAlerts].slice(-200));
-    }
+    const { updated, newAlerts } = executeTick();
 
     res.json({
       success: true,
@@ -86,23 +94,13 @@ export function createSimulationRoutes(
     });
   });
 
-  // PATCH /api/simulation/config — update config
+  // PATCH /api/simulation/config — update current config
   router.patch('/config', validateBody(SimConfigSchema), (req: Request, res: Response) => {
     currentConfig = { ...currentConfig, ...req.body };
 
-    // Restart with new config if running
+    // Automatically restart with new interval/config if already running
     if (simulationInterval) {
-      clearInterval(simulationInterval);
-      simulationInterval = setInterval(() => {
-        const zones = getZones();
-        const updated = simulateTick(zones, currentConfig);
-        setZones(updated);
-        const newAlerts = checkAlerts(updated);
-        if (newAlerts.length > 0) {
-          const existing = getAlerts();
-          setAlerts([...existing, ...newAlerts].slice(-200));
-        }
-      }, currentConfig.intervalMs);
+      startSimulation();
     }
 
     res.json({

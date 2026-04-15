@@ -15,15 +15,19 @@ export function Dashboard() {
   const topRiskZones = [...zones].sort((a: Zone, b: Zone) => b.riskScore - a.riskScore).slice(0, 6);
 
   async function handleResolveAlert(alertId: string) {
-    try { await resolveAlert(alertId); } catch { /* handled by context refresh */ }
+    try {
+      await resolveAlert(alertId);
+    } catch (err) {
+      console.error('Failed to resolve alert:', err);
+    }
   }
 
   return (
     <div className="space-y-6 animate-fade-in">
       {/* Hero Header */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-surface-tertiary to-surface-primary border border-glass-border p-8">
-        <div className="absolute inset-0 bg-radial-glow" />
-        <div className="absolute inset-0 bg-grid opacity-30" />
+        <div className="absolute inset-0 bg-radial-glow" aria-hidden="true" />
+        <div className="absolute inset-0 bg-grid opacity-30" aria-hidden="true" />
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
@@ -40,7 +44,7 @@ export function Dashboard() {
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4" role="region" aria-label="Stadium statistics summary">
         <StatCard
           label="Total Occupancy"
           value={summary?.totalOccupancy?.toLocaleString() ?? '—'}
@@ -121,7 +125,7 @@ export function Dashboard() {
 
 function LoadingSkeleton() {
   return (
-    <div className="space-y-6 animate-pulse">
+    <div className="space-y-6 animate-pulse" role="status" aria-busy="true" aria-label="Loading dashboard data">
       <div className="h-40 rounded-2xl bg-surface-tertiary/50" />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[1, 2, 3, 4].map((i) => (
